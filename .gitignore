@@ -1,3 +1,7 @@
-verilog
-vicilabprj
-drawings
+
+
+/verilog/*
+
+/vicilabprj/*
+
+/drawings/*
