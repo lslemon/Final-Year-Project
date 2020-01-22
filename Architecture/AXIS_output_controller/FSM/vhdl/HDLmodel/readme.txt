@@ -1,1 +1,0 @@
-Use VHDL_template.vhd as the template for creation of VHDL models

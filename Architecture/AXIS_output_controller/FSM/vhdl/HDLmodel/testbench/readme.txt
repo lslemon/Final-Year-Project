@@ -1,1 +1,0 @@
-Use VHDL_template_TB.vhd as the template for creation of VHDL testbenches

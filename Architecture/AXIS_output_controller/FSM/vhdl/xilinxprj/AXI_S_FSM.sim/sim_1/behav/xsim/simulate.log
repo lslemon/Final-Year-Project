@@ -1,6 +1,0 @@
-Vivado Simulator 2019.1
-Time resolution is 1 ps
-Note: %N : Simulation start
-Time: 0 ps  Iteration: 0  Process: /fsm_TB/stim_i  File: C:/Users/lukes/Documents/Final Year Project/Architecture/AXIS_output_controller/FSM/vhdl/HDLmodel/testbench/fsm_TB.vhd
-Note: %N : Simulation Done.
-Time: 244 ns  Iteration: 0  Process: /fsm_TB/stim_i  File: C:/Users/lukes/Documents/Final Year Project/Architecture/AXIS_output_controller/FSM/vhdl/HDLmodel/testbench/fsm_TB.vhd
