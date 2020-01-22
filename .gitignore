@@ -5,3 +5,10 @@
 /vicilabprj/*
 
 /drawings/*
+Architecture/AXIS_output_controller/*
+Architecture/FFT_axi/vhdl/xilinxprj/project_1.cache/*
+Architecture/FFT_axi/vhdl/xilinxprj/project_1.hw/*
+Architecture/FFT_axi/vhdl/xilinxprj/project_1.runs/*
+Architecture/FFT_axi/vhdl/xilinxprj/project_1.srcs/*
+Architecture/FFT_axi/vicilabprj/*
+Emotiv Epoch/*
