@@ -124,6 +124,7 @@ set bCheckIPsPassed 1
 set bCheckIPs 1
 if { $bCheckIPs == 1 } {
    set list_check_ips "\ 
+xilinx.com:ip:axi_gpio:2.0\
 xilinx.com:ip:axi_intc:4.1\
 xilinx.com:ip:processing_system7:5.5\
 xilinx.com:ip:proc_sys_reset:5.0\
@@ -196,11 +197,15 @@ proc create_hier_cell_fft_group { parentCell nameHier } {
   current_bd_instance $hier_obj
 
   # Create interface pins
+  create_bd_intf_pin -mode Monitor -vlnv xilinx.com:interface:axis_rtl:1.0 M_AXIS_DATA
+
   create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S
 
   create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_MM2S1
 
   create_bd_intf_pin -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_AXI_S2MM
+
+  create_bd_intf_pin -mode Monitor -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS_DATA
 
   create_bd_intf_pin -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI_LITE
 
@@ -218,20 +223,36 @@ proc create_hier_cell_fft_group { parentCell nameHier } {
    CONFIG.c_include_mm2s {1} \
    CONFIG.c_include_s2mm {0} \
    CONFIG.c_include_sg {0} \
-   CONFIG.c_m_axis_mm2s_tdata_width {16} \
+   CONFIG.c_m_axis_mm2s_tdata_width {32} \
+   CONFIG.c_micro_dma {0} \
+   CONFIG.c_mm2s_burst_size {32} \
    CONFIG.c_sg_include_stscntrl_strm {0} \
+   CONFIG.c_sg_length_width {26} \
  ] $DMA_CONFIG
 
   # Create instance: DMA_DATA, and set properties
   set DMA_DATA [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_dma:7.1 DMA_DATA ]
   set_property -dict [ list \
+   CONFIG.c_include_mm2s {1} \
    CONFIG.c_include_sg {0} \
    CONFIG.c_sg_include_stscntrl_strm {0} \
-   CONFIG.c_sg_length_width {24} \
+   CONFIG.c_sg_length_width {26} \
  ] $DMA_DATA
 
   # Create instance: FFT, and set properties
   set FFT [ create_bd_cell -type ip -vlnv xilinx.com:ip:xfft:9.1 FFT ]
+  set_property -dict [ list \
+   CONFIG.channels {1} \
+   CONFIG.cyclic_prefix_insertion {false} \
+   CONFIG.data_format {fixed_point} \
+   CONFIG.implementation_options {automatically_select} \
+   CONFIG.number_of_stages_using_block_ram_for_data_and_phase_factors {0} \
+   CONFIG.output_ordering {natural_order} \
+   CONFIG.run_time_configurable_transform_length {true} \
+   CONFIG.target_data_throughput {50} \
+   CONFIG.throttle_scheme {nonrealtime} \
+   CONFIG.transform_length {65536} \
+ ] $FFT
 
   # Create instance: xlconcat_0, and set properties
   set xlconcat_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat:2.1 xlconcat_0 ]
@@ -244,9 +265,13 @@ proc create_hier_cell_fft_group { parentCell nameHier } {
   connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins M_AXI_MM2S1] [get_bd_intf_pins DMA_CONFIG/M_AXI_MM2S]
   connect_bd_intf_net -intf_net DMA_CONFIG_M_AXIS_MM2S [get_bd_intf_pins DMA_CONFIG/M_AXIS_MM2S] [get_bd_intf_pins FFT/S_AXIS_CONFIG]
   connect_bd_intf_net -intf_net DMA_M_AXIS_MM2S [get_bd_intf_pins DMA_DATA/M_AXIS_MM2S] [get_bd_intf_pins FFT/S_AXIS_DATA]
+  connect_bd_intf_net -intf_net [get_bd_intf_nets DMA_M_AXIS_MM2S] [get_bd_intf_pins S_AXIS_DATA] [get_bd_intf_pins DMA_DATA/M_AXIS_MM2S]
+  set_property HDL_ATTRIBUTE.DEBUG {true} [get_bd_intf_nets DMA_M_AXIS_MM2S]
   connect_bd_intf_net -intf_net DMA_M_AXI_MM2S [get_bd_intf_pins M_AXI_MM2S] [get_bd_intf_pins DMA_DATA/M_AXI_MM2S]
   connect_bd_intf_net -intf_net DMA_M_AXI_S2MM [get_bd_intf_pins M_AXI_S2MM] [get_bd_intf_pins DMA_DATA/M_AXI_S2MM]
   connect_bd_intf_net -intf_net FFT_M_AXIS_DATA [get_bd_intf_pins DMA_DATA/S_AXIS_S2MM] [get_bd_intf_pins FFT/M_AXIS_DATA]
+  connect_bd_intf_net -intf_net [get_bd_intf_nets FFT_M_AXIS_DATA] [get_bd_intf_pins M_AXIS_DATA] [get_bd_intf_pins FFT/M_AXIS_DATA]
+  set_property HDL_ATTRIBUTE.DEBUG {true} [get_bd_intf_nets FFT_M_AXIS_DATA]
   connect_bd_intf_net -intf_net ps7_0_axi_periph_M00_AXI [get_bd_intf_pins S_AXI_LITE] [get_bd_intf_pins DMA_DATA/S_AXI_LITE]
 
   # Create port connections
@@ -302,8 +327,18 @@ proc create_root_design { parentCell } {
 
   set FIXED_IO [ create_bd_intf_port -mode Master -vlnv xilinx.com:display_processing_system7:fixedio_rtl:1.0 FIXED_IO ]
 
+  set leds_4bits [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gpio_rtl:1.0 leds_4bits ]
+
 
   # Create ports
+
+  # Create instance: axi_gpio_0, and set properties
+  set axi_gpio_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_gpio:2.0 axi_gpio_0 ]
+  set_property -dict [ list \
+   CONFIG.C_ALL_OUTPUTS {1} \
+   CONFIG.GPIO_BOARD_INTERFACE {Custom} \
+   CONFIG.USE_BOARD_FLOW {true} \
+ ] $axi_gpio_0
 
   # Create instance: axi_intc_0, and set properties
   set axi_intc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_intc:4.1 axi_intc_0 ]
@@ -335,7 +370,7 @@ proc create_root_design { parentCell } {
    CONFIG.PCW_ACT_DCI_PERIPHERAL_FREQMHZ {10.096154} \
    CONFIG.PCW_ACT_ENET0_PERIPHERAL_FREQMHZ {125.000000} \
    CONFIG.PCW_ACT_ENET1_PERIPHERAL_FREQMHZ {10.000000} \
-   CONFIG.PCW_ACT_FPGA0_PERIPHERAL_FREQMHZ {100.000000} \
+   CONFIG.PCW_ACT_FPGA0_PERIPHERAL_FREQMHZ {250.000000} \
    CONFIG.PCW_ACT_FPGA1_PERIPHERAL_FREQMHZ {10.000000} \
    CONFIG.PCW_ACT_FPGA2_PERIPHERAL_FREQMHZ {10.000000} \
    CONFIG.PCW_ACT_FPGA3_PERIPHERAL_FREQMHZ {10.000000} \
@@ -373,7 +408,7 @@ proc create_root_design { parentCell } {
    CONFIG.PCW_CAN_PERIPHERAL_DIVISOR1 {1} \
    CONFIG.PCW_CAN_PERIPHERAL_FREQMHZ {100} \
    CONFIG.PCW_CAN_PERIPHERAL_VALID {0} \
-   CONFIG.PCW_CLK0_FREQ {100000000} \
+   CONFIG.PCW_CLK0_FREQ {250000000} \
    CONFIG.PCW_CLK1_FREQ {10000000} \
    CONFIG.PCW_CLK2_FREQ {10000000} \
    CONFIG.PCW_CLK3_FREQ {10000000} \
@@ -497,7 +532,7 @@ proc create_root_design { parentCell } {
    CONFIG.PCW_EN_USB1 {0} \
    CONFIG.PCW_EN_WDT {0} \
    CONFIG.PCW_FCLK0_PERIPHERAL_CLKSRC {IO PLL} \
-   CONFIG.PCW_FCLK0_PERIPHERAL_DIVISOR0 {5} \
+   CONFIG.PCW_FCLK0_PERIPHERAL_DIVISOR0 {2} \
    CONFIG.PCW_FCLK0_PERIPHERAL_DIVISOR1 {2} \
    CONFIG.PCW_FCLK1_PERIPHERAL_CLKSRC {IO PLL} \
    CONFIG.PCW_FCLK1_PERIPHERAL_DIVISOR0 {1} \
@@ -512,7 +547,7 @@ proc create_root_design { parentCell } {
    CONFIG.PCW_FCLK_CLK1_BUF {FALSE} \
    CONFIG.PCW_FCLK_CLK2_BUF {FALSE} \
    CONFIG.PCW_FCLK_CLK3_BUF {FALSE} \
-   CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {100} \
+   CONFIG.PCW_FPGA0_PERIPHERAL_FREQMHZ {250} \
    CONFIG.PCW_FPGA1_PERIPHERAL_FREQMHZ {50} \
    CONFIG.PCW_FPGA2_PERIPHERAL_FREQMHZ {50} \
    CONFIG.PCW_FPGA3_PERIPHERAL_FREQMHZ {50} \
@@ -1112,7 +1147,7 @@ proc create_root_design { parentCell } {
   # Create instance: standard_interconnect, and set properties
   set standard_interconnect [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 standard_interconnect ]
   set_property -dict [ list \
-   CONFIG.NUM_MI {3} \
+   CONFIG.NUM_MI {4} \
  ] $standard_interconnect
 
   # Create instance: stream_interconnect, and set properties
@@ -1124,13 +1159,43 @@ proc create_root_design { parentCell } {
   # Create instance: system_ila_0, and set properties
   set system_ila_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:system_ila:1.1 system_ila_0 ]
   set_property -dict [ list \
+   CONFIG.C_BRAM_CNT {4.5} \
+   CONFIG.C_MON_TYPE {MIX} \
+   CONFIG.C_NUM_MONITOR_SLOTS {3} \
+   CONFIG.C_NUM_OF_PROBES {3} \
+   CONFIG.C_PROBE0_WIDTH {4} \
+   CONFIG.C_PROBE_WIDTH_PROPAGATION {MANUAL} \
+   CONFIG.C_SLOT {2} \
+   CONFIG.C_SLOT_0_APC_EN {0} \
+   CONFIG.C_SLOT_0_AXI_AR_SEL_DATA {1} \
+   CONFIG.C_SLOT_0_AXI_AR_SEL_TRIG {1} \
+   CONFIG.C_SLOT_0_AXI_AW_SEL_DATA {1} \
+   CONFIG.C_SLOT_0_AXI_AW_SEL_TRIG {1} \
+   CONFIG.C_SLOT_0_AXI_B_SEL_DATA {1} \
+   CONFIG.C_SLOT_0_AXI_B_SEL_TRIG {1} \
+   CONFIG.C_SLOT_0_AXI_R_SEL_DATA {1} \
+   CONFIG.C_SLOT_0_AXI_R_SEL_TRIG {1} \
+   CONFIG.C_SLOT_0_AXI_W_SEL_DATA {1} \
+   CONFIG.C_SLOT_0_AXI_W_SEL_TRIG {1} \
+   CONFIG.C_SLOT_0_INTF_TYPE {xilinx.com:interface:aximm_rtl:1.0} \
+   CONFIG.C_SLOT_1_APC_EN {0} \
+   CONFIG.C_SLOT_1_AXI_DATA_SEL {1} \
+   CONFIG.C_SLOT_1_AXI_TRIG_SEL {1} \
+   CONFIG.C_SLOT_1_INTF_TYPE {xilinx.com:interface:axis_rtl:1.0} \
+   CONFIG.C_SLOT_2_APC_EN {0} \
+   CONFIG.C_SLOT_2_AXI_DATA_SEL {1} \
+   CONFIG.C_SLOT_2_AXI_TRIG_SEL {1} \
+   CONFIG.C_SLOT_2_INTF_TYPE {xilinx.com:interface:axis_rtl:1.0} \
    CONFIG.C_TRIGIN_EN {true} \
    CONFIG.C_TRIGOUT_EN {true} \
  ] $system_ila_0
 
   # Create interface connections
+connect_bd_intf_net -intf_net Conn [get_bd_intf_pins fft_group/M_AXIS_DATA] [get_bd_intf_pins system_ila_0/SLOT_1_AXIS]
+connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins fft_group/S_AXIS_DATA] [get_bd_intf_pins system_ila_0/SLOT_2_AXIS]
   connect_bd_intf_net -intf_net DMA_M_AXI_MM2S [get_bd_intf_pins fft_group/M_AXI_MM2S] [get_bd_intf_pins stream_interconnect/S00_AXI]
   connect_bd_intf_net -intf_net DMA_M_AXI_S2MM [get_bd_intf_pins fft_group/M_AXI_S2MM] [get_bd_intf_pins stream_interconnect/S01_AXI]
+  connect_bd_intf_net -intf_net axi_gpio_0_GPIO [get_bd_intf_ports leds_4bits] [get_bd_intf_pins axi_gpio_0/GPIO]
   connect_bd_intf_net -intf_net axi_smc_M00_AXI [get_bd_intf_pins processing_system7_0/S_AXI_HP0] [get_bd_intf_pins stream_interconnect/M00_AXI]
   connect_bd_intf_net -intf_net fft_group_M_AXI_MM2S1 [get_bd_intf_pins fft_group/M_AXI_MM2S1] [get_bd_intf_pins stream_interconnect/S02_AXI]
   connect_bd_intf_net -intf_net processing_system7_0_DDR [get_bd_intf_ports DDR] [get_bd_intf_pins processing_system7_0/DDR]
@@ -1140,18 +1205,23 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net ps7_0_axi_periph_M00_AXI [get_bd_intf_pins fft_group/S_AXI_LITE] [get_bd_intf_pins standard_interconnect/M00_AXI]
   connect_bd_intf_net -intf_net standard_interconnect_M01_AXI [get_bd_intf_pins fft_group/S_AXI_LITE1] [get_bd_intf_pins standard_interconnect/M01_AXI]
   connect_bd_intf_net -intf_net standard_interconnect_M02_AXI [get_bd_intf_pins axi_intc_0/s_axi] [get_bd_intf_pins standard_interconnect/M02_AXI]
+  connect_bd_intf_net -intf_net standard_interconnect_M03_AXI [get_bd_intf_pins axi_gpio_0/S_AXI] [get_bd_intf_pins standard_interconnect/M03_AXI]
+connect_bd_intf_net -intf_net [get_bd_intf_nets standard_interconnect_M03_AXI] [get_bd_intf_pins standard_interconnect/M03_AXI] [get_bd_intf_pins system_ila_0/SLOT_0_AXI]
+  set_property HDL_ATTRIBUTE.DEBUG {true} [get_bd_intf_nets standard_interconnect_M03_AXI]
   connect_bd_intf_net -intf_net system_ila_0_TRIG_OUT [get_bd_intf_pins processing_system7_0/TRIGGER_IN_0] [get_bd_intf_pins system_ila_0/TRIG_OUT]
 
   # Create port connections
+  connect_bd_net -net axi_gpio_0_gpio_io_o [get_bd_pins axi_gpio_0/gpio_io_o] [get_bd_pins system_ila_0/probe0]
   connect_bd_net -net axi_intc_0_irq [get_bd_pins axi_intc_0/irq] [get_bd_pins processing_system7_0/IRQ_F2P]
   connect_bd_net -net fft_group_dout [get_bd_pins axi_intc_0/intr] [get_bd_pins fft_group/dout]
-  connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins axi_intc_0/s_axi_aclk] [get_bd_pins fft_group/s_axi_lite_aclk] [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins rst_ps7_0_100M/slowest_sync_clk] [get_bd_pins standard_interconnect/ACLK] [get_bd_pins standard_interconnect/M00_ACLK] [get_bd_pins standard_interconnect/M01_ACLK] [get_bd_pins standard_interconnect/M02_ACLK] [get_bd_pins standard_interconnect/S00_ACLK] [get_bd_pins stream_interconnect/aclk] [get_bd_pins system_ila_0/clk]
+  connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins axi_gpio_0/s_axi_aclk] [get_bd_pins axi_intc_0/s_axi_aclk] [get_bd_pins fft_group/s_axi_lite_aclk] [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins rst_ps7_0_100M/slowest_sync_clk] [get_bd_pins standard_interconnect/ACLK] [get_bd_pins standard_interconnect/M00_ACLK] [get_bd_pins standard_interconnect/M01_ACLK] [get_bd_pins standard_interconnect/M02_ACLK] [get_bd_pins standard_interconnect/M03_ACLK] [get_bd_pins standard_interconnect/S00_ACLK] [get_bd_pins stream_interconnect/aclk] [get_bd_pins system_ila_0/clk]
   connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_100M/ext_reset_in]
-  connect_bd_net -net rst_ps7_0_100M_peripheral_aresetn [get_bd_pins axi_intc_0/s_axi_aresetn] [get_bd_pins fft_group/axi_resetn] [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] [get_bd_pins standard_interconnect/ARESETN] [get_bd_pins standard_interconnect/M00_ARESETN] [get_bd_pins standard_interconnect/M01_ARESETN] [get_bd_pins standard_interconnect/M02_ARESETN] [get_bd_pins standard_interconnect/S00_ARESETN] [get_bd_pins stream_interconnect/aresetn] [get_bd_pins system_ila_0/resetn]
+  connect_bd_net -net rst_ps7_0_100M_peripheral_aresetn [get_bd_pins axi_gpio_0/s_axi_aresetn] [get_bd_pins axi_intc_0/s_axi_aresetn] [get_bd_pins fft_group/axi_resetn] [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] [get_bd_pins standard_interconnect/ARESETN] [get_bd_pins standard_interconnect/M00_ARESETN] [get_bd_pins standard_interconnect/M01_ARESETN] [get_bd_pins standard_interconnect/M02_ARESETN] [get_bd_pins standard_interconnect/M03_ARESETN] [get_bd_pins standard_interconnect/S00_ARESETN] [get_bd_pins stream_interconnect/aresetn] [get_bd_pins system_ila_0/resetn]
 
   # Create address segments
   create_bd_addr_seg -range 0x00010000 -offset 0x40410000 [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs fft_group/DMA_CONFIG/S_AXI_LITE/Reg] SEG_DMA_CONFIG_Reg
   create_bd_addr_seg -range 0x00010000 -offset 0x40400000 [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs fft_group/DMA_DATA/S_AXI_LITE/Reg] SEG_DMA_Reg
+  create_bd_addr_seg -range 0x00010000 -offset 0x41200000 [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs axi_gpio_0/S_AXI/Reg] SEG_axi_gpio_0_Reg
   create_bd_addr_seg -range 0x00010000 -offset 0x41800000 [get_bd_addr_spaces processing_system7_0/Data] [get_bd_addr_segs axi_intc_0/S_AXI/Reg] SEG_axi_intc_0_Reg
   create_bd_addr_seg -range 0x20000000 -offset 0x00000000 [get_bd_addr_spaces fft_group/DMA_CONFIG/Data_MM2S] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] SEG_processing_system7_0_HP0_DDR_LOWOCM
   create_bd_addr_seg -range 0x20000000 -offset 0x00000000 [get_bd_addr_spaces fft_group/DMA_DATA/Data_MM2S] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] SEG_processing_system7_0_HP0_DDR_LOWOCM
